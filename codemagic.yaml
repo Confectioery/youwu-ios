@@ -35,6 +35,7 @@ workflows:
             -scheme Runner \
             -configuration Release \
             -destination 'generic/platform=iOS' \
+            -derivedDataPath "$CM_BUILD_DIR/build/ios" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -44,12 +45,16 @@ workflows:
             build
       - name: 打包ipa
         script: |
-          cd $CM_BUILD_DIR/build/ios/iphoneos
-          ls -la
+          APP_DIR="$CM_BUILD_DIR/build/ios/Build/Products/Release-iphoneos"
+          echo "查找Runner.app..."
+          find "$CM_BUILD_DIR/build/ios" -name "Runner.app" -type d 2>/dev/null || true
+          ls -la "$APP_DIR" || true
+          cd "$APP_DIR"
           mkdir -p Payload
           cp -R Runner.app Payload/
           zip -r youwu-ios.ipa Payload
-          cp youwu-ios.ipa $CM_BUILD_DIR/youwu-ios.ipa
+          cp youwu-ios.ipa "$CM_BUILD_DIR/youwu-ios.ipa"
+          echo "打包完成: $CM_BUILD_DIR/youwu-ios.ipa"
     artifacts:
-      - build/ios/iphoneos/youwu-ios.ipa
       - youwu-ios.ipa
+      - build/ios/Build/Products/Release-iphoneos/youwu-ios.ipa
