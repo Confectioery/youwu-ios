@@ -1,66 +1,59 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:encrypt/encrypt.dart';
-import 'package:crypto/crypto.dart';
 
-/// 康蓝科技(Klcxkj)蓝牙水表AES加解密
+/// 凯路设备域 AES 加解密
 ///
 /// 对应Android的 KlcxkjCrypto.kt
-/// 结算数据通过AES加密传输，需要解密后解析写回帧
+/// 算法：AES-128-ECB，密钥 "20210118klcx@002"
+/// 密文：标准Base64
+/// 用于结算写回 clData 的解密
 class KlcxkjCrypto {
-  static const String _key = 'klcxkj_ble_water_2024'; // 设备厂商固定密钥
+  static const String _aesKey = '20210118klcx@002';
 
-  static Key get _encKey {
-    final bytes = utf8.encode(_key);
-    final padded = List<int>.filled(16, 0);
-    for (var i = 0; i < bytes.length && i < 16; i++) {
-      padded[i] = bytes[i];
-    }
-    return Key(Uint8List.fromList(padded));
-  }
-
-  /// AES解密结算返回的clData
-  /// 返回明文，失败返回null
-  static String? decryptByAes(String? hexData) {
-    if (hexData == null || hexData.isEmpty) return null;
+  /// AES解密（设备域 clData）
+  /// 返回解密后的明文；失败返回null
+  /// 明文格式是 <前缀>-<dataHex>，取 - 之后那段才是要写回设备的0x86数据
+  static String? decryptByAes(String? cipher) {
+    if (cipher == null || cipher.isEmpty) return null;
     try {
-      final data = _hexToBytes(hexData);
-      if (data.length < 16) return null;
-      // 前16字节为IV，后面为密文
-      final iv = IV(Uint8List.fromList(data.sublist(0, 16)));
-      final cipherText = data.sublist(16);
-      final encrypter = Encrypter(AES(_encKey, mode: AESMode.cbc, padding: 'PKCS7'));
-      final plain = encrypter.decrypt(Encrypted(Uint8List.fromList(cipherText)), iv: iv);
-      return plain;
+      final decoded = base64Decode(cipher);
+      if (decoded.isEmpty || decoded.length % 16 != 0) return null;
+
+      final key = Key(Uint8List.fromList(utf8.encode(_aesKey)));
+      final encrypter = Encrypter(AES(key, mode: AESMode.ecb, padding: null));
+      final decrypted = encrypter.decrypt(Encrypted(decoded));
+
+      return _stripPaddingToText(utf8.encode(decrypted));
     } catch (_) {
       return null;
     }
   }
 
-  /// AES加密
-  static String encryptByAes(String plaintext) {
-    final iv = IV.fromSecureRandom(16);
-    final encrypter = Encrypter(AES(_encKey, mode: AESMode.cbc, padding: 'PKCS7'));
-    final encrypted = encrypter.encrypt(plaintext, iv: iv);
-    final result = Uint8List.fromList([...iv.bytes, ...encrypted.bytes]);
-    return _bytesToHex(result);
-  }
-
-  /// MD5签名
-  static String md5Sign(String input) {
-    return md5.convert(utf8.encode(input)).toString();
-  }
-
-  static Uint8List _hexToBytes(String hex) {
-    final clean = hex.replaceAll(RegExp(r'[^0-9a-fA-F]'), '');
-    final bytes = Uint8List(clean.length ~/ 2);
-    for (var i = 0; i < bytes.length; i++) {
-      bytes[i] = int.parse(clean.substring(i * 2, i * 2 + 2), radix: 16);
+  /// 去填充 + 转文本（对齐native语义）
+  /// - 末字节last满足1..n时校验末尾last字节是否都等于last（PKCS#7）
+  /// - last==0或>n视为无填充
+  /// - 最后按C字符串截断（到第一个0x00）
+  static String _stripPaddingToText(List<int> decrypted) {
+    final n = decrypted.length;
+    if (n == 0) return '';
+    final last = decrypted[n - 1] & 0xFF;
+    var effective = decrypted;
+    if (last >= 1 && last <= n) {
+      final start = n - last;
+      var valid = true;
+      for (var i = n - 1; i >= start; i--) {
+        if ((decrypted[i] & 0xFF) != last) {
+          valid = false;
+          break;
+        }
+      }
+      if (valid) {
+        effective = decrypted.sublist(0, n - last);
+      }
     }
-    return bytes;
-  }
-
-  static String _bytesToHex(Uint8List bytes) {
-    return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    final zeroIndex = effective.indexWhere((b) => b == 0);
+    final end = zeroIndex >= 0 ? zeroIndex : effective.length;
+    return utf8.decode(effective.sublist(0, end), allowMalformed: true);
   }
 }

@@ -1,7 +1,9 @@
 import 'dart:typed_data';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'ble/ble_controller.dart';
 import 'ble/ble_frame.dart';
 import 'ble/klcxkj_crypto.dart';
+import 'ble/device_query_state.dart';
 import 'shower_api.dart';
 
 /// 蓝牙会话（本地持久化的交易信息）
@@ -93,16 +95,23 @@ class ShowerBleController {
   final BleController _ble;
   final ShowerApi _api;
 
+  /// iOS必须先扫描再连接，用户选择的设备存在这里
+  BluetoothDevice? selectedDevice;
+
   ShowerBleController({BleController? ble, ShowerApi? api})
       : _ble = ble ?? BleController(),
         _api = api ?? ShowerApi();
 
-  bool get isBluetoothOn => _ble.isBluetoothOn;
+  bool get isBluetoothOn => true;
   void disconnect() => _ble.disconnect();
 
-  /// 连接设备
-  Future<String?> _connect(String mac) async {
-    final result = await _ble.connect(mac);
+  /// 扫描附近的蓝牙水表
+  Future<List<ScannedDevice>> scanDevices() => _ble.scanDevices();
+
+  /// 连接已选择的设备（iOS必须先扫描选择）
+  Future<String?> _connect() async {
+    if (selectedDevice == null) return '请先扫描并选择热水器';
+    final result = await _ble.connectDevice(selectedDevice!);
     return switch (result) {
       BleReady() => null,
       BleNoService() => '设备没有蓝牙水控服务，请检查绑定的设备',
@@ -123,11 +132,11 @@ class ShowerBleController {
       return const BleOpenFailed('请使用开水时的账户');
     }
 
-    if (!RegExp(r'^[0-9A-Fa-f]{12}$').hasMatch(device.controlMac)) {
-      return const BleOpenFailed('设备蓝牙地址无效，请重新绑定');
+    if (selectedDevice == null) {
+      return const BleOpenFailed('请先扫描并选择热水器');
     }
 
-    final connErr = await _connect(device.controlMac);
+    final connErr = await _connect();
     if (connErr != null) return BleOpenFailed(connErr);
 
     final state = await _ble.query();
@@ -137,7 +146,6 @@ class ShowerBleController {
 
     // state=3或6：有遗留未结算记录，先结算
     if (state.state == 3 || state.state == 6) {
-      final compat = _toCompat(state);
       final err = await _settle(state, auth);
       _ble.disconnect();
       if (err == null) {
@@ -159,10 +167,9 @@ class ShowerBleController {
     }
 
     // 获取费率
-    final compat = _toCompat(state);
-    late final BleRate rate;
+    late final ShowerBleRate rate;
     try {
-      rate = await _api.bleRate(auth, device, compat);
+      rate = await _api.bleRate(auth, device, state);
     } on ShowerSessionExpired {
       rethrow;
     } catch (e) {
@@ -191,7 +198,7 @@ class ShowerBleController {
     if (session.accountPhone.isNotEmpty && session.accountPhone != auth.phone) {
       return false;
     }
-    if (await _connect(session.mac) != null) return false;
+    if (await _connect() != null) return false;
     final state = await _ble.query(timeout: const Duration(seconds: 1));
     if (state == null) return false;
     return state.state != 0 && state.state != 3 && state.state != 6;
@@ -202,7 +209,7 @@ class ShowerBleController {
     if (session.accountPhone.isNotEmpty && session.accountPhone != auth.phone) {
       return const BlePending('请使用开水时的账户');
     }
-    final connErr = await _connect(session.mac);
+    final connErr = await _connect();
     if (connErr != null) return BlePending(connErr);
 
     final state = await _ble.query();
@@ -221,7 +228,7 @@ class ShowerBleController {
     if (session.accountPhone.isNotEmpty && session.accountPhone != auth.phone) {
       return const BlePending('请使用开水时的账户');
     }
-    final connErr = await _connect(session.mac);
+    final connErr = await _connect();
     if (connErr != null) return BlePending(connErr);
 
     final before = await _ble.query();
@@ -244,10 +251,10 @@ class ShowerBleController {
     // 断开重连（避免原连接结算出无效账单）
     _ble.disconnect();
     await Future.delayed(const Duration(milliseconds: 500));
-    var err = await _connect(session.mac);
+    var err = await _connect();
     if (err != null) {
       await Future.delayed(const Duration(milliseconds: 500));
-      err = await _connect(session.mac);
+      err = await _connect();
     }
     if (err != null) {
       return const BlePending('水已关闭，但结算未完成；靠近设备后点击重试');
@@ -273,10 +280,9 @@ class ShowerBleController {
       return '未能读取设备消费数据';
     }
 
-    final compat = _toCompat(state);
-    late final BleUploadResult upload;
+    late final ShowerBleUpload upload;
     try {
-      upload = await _api.bleUpload(auth, compat, payload);
+      upload = await _api.bleUpload(auth, state, payload);
     } on ShowerSessionExpired {
       rethrow;
     } catch (e) {
@@ -299,14 +305,6 @@ class ShowerBleController {
     final ok = await _ble.writeBack(back);
     return ok ? null : '结算已上传，但设备写回失败，请重试';
   }
-
-  DeviceQueryStateCompat _toCompat(DeviceQueryState s) => DeviceQueryStateCompat(
-        protocolType: s.protocolType,
-        randomNumber: s.randomNumber,
-        state: s.state,
-        devType: s.devType,
-        a1: s.a1,
-      );
 
   void dispose() {
     _ble.dispose();

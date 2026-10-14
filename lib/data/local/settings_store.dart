@@ -15,6 +15,8 @@ class SettingsStore {
   static const _keyWaterDevice = 'water_device_id';
   static const _keyShowerPhone = 'shower_phone';
   static const _keyShowerToken = 'shower_token';
+  static const _keyShowerAuth = 'shower_auth_json';
+  static const _keyShowerDevice = 'shower_device_json';
 
   Future<String> get account async {
     final prefs = await SharedPreferences.getInstance();
@@ -139,5 +141,27 @@ class SettingsStore {
   Future<void> setShowerToken(String v) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyShowerToken, v);
+  }
+
+  // 洗澡完整认证信息（JSON）
+  Future<String> get showerAuthJson async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyShowerAuth) ?? '';
+  }
+
+  Future<void> setShowerAuthJson(String v) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyShowerAuth, v);
+  }
+
+  // 洗澡绑定设备（JSON）
+  Future<String> get showerDeviceJson async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyShowerDevice) ?? '';
+  }
+
+  Future<void> setShowerDeviceJson(String v) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyShowerDevice, v);
   }
 }

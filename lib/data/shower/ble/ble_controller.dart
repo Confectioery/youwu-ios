@@ -2,14 +2,15 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'ble_frame.dart';
+import 'device_query_state.dart';
 
 /// 设备状态帧解析结果
 class DeviceQueryState {
-  final String protocolType; // 协议版本，如"20"
-  final String randomNumber; // 设备随机数，8位hex
+  final String protocolType;
+  final String randomNumber;
   final int state; // 0=空闲, 1=使用中, 3/6=待结算
-  final int devType; // MAC类型第1字节
-  final int a1; // MAC类型第2字节
+  final int devType;
+  final int a1;
 
   const DeviceQueryState({
     required this.protocolType,
@@ -24,38 +25,43 @@ class DeviceQueryState {
 sealed class BleConnectResult {
   const BleConnectResult();
 }
-
-class BleReady extends BleConnectResult {
-  const BleReady();
-}
-
-class BleNoService extends BleConnectResult {
-  const BleNoService();
-}
-
+class BleReady extends BleConnectResult { const BleReady(); }
+class BleNoService extends BleConnectResult { const BleNoService(); }
 class BleFailed extends BleConnectResult {
   final String reason;
   const BleFailed(this.reason);
 }
 
+/// 扫描到的蓝牙设备
+class ScannedDevice {
+  final BluetoothDevice device;
+  final String name;
+  final String? mac; // iOS上可能为null
+  final int rssi;
+
+  const ScannedDevice({required this.device, required this.name, this.mac, required this.rssi});
+}
+
 /// 蓝牙水表GATT连接管理器
 ///
-/// 对应Android的 BleController.kt
-/// 使用 flutter_blue_plus 实现，把回调式API封装为顺序调用
+/// iOS注意：CoreBluetooth不暴露MAC地址，必须先扫描设备，
+/// 用扫描到的BluetoothDevice对象连接，不能用MAC地址直连。
 class BleController {
   static const String serviceUuid = '0000FF00-0000-1000-8000-00805F9B34FB';
   static const String notifyUuid = '0000FF01-0000-1000-8000-00805F9B34FB';
   static const String writeUuid = '0000FF02-0000-1000-8000-00805F9B34FB';
 
-  static const int chunkSize = 20; // BLE MTU-3
+  static const int chunkSize = 20;
   static const int chunkGapMs = 20;
   static const Duration defaultTimeout = Duration(seconds: 8);
   static const Duration connectTimeout = Duration(seconds: 15);
+  static const Duration scanTimeout = Duration(seconds: 10);
 
   BluetoothDevice? _device;
   BluetoothCharacteristic? _writeChar;
   BluetoothCharacteristic? _notifyChar;
   StreamSubscription<List<int>>? _notifySub;
+  StreamSubscription<ScanResult>? _scanSub;
 
   final StreamController<(int, Uint8List)> _incoming = StreamController.broadcast();
   final BytesBuilder _rxBuf = BytesBuilder();
@@ -63,64 +69,114 @@ class BleController {
   bool _sawNoService = false;
 
   bool get isReady => _ready;
-  bool get isBluetoothOn => true; // flutter_blue_plus 有单独的状态检查
+  bool get isConnected => _device != null && _ready;
 
-  /// MAC地址归一化：服务端给的无冒号格式 -> Android/iOS需要的带冒号格式
-  /// 注意：iOS上CoreBluetooth用的是UUID而非MAC，这里保留MAC用于服务端接口
-  String? normalizeMac(String raw) {
-    final plain = raw.replaceAll(':', '').replaceAll('-', '').toUpperCase();
-    if (plain.length != 12 || !RegExp(r'^[0-9A-F]{12}$').hasMatch(plain)) {
-      return null;
+  /// 扫描附近的蓝牙水表（过滤FF00服务）
+  Future<List<ScannedDevice>> scanDevices({Duration timeout = scanTimeout}) async {
+    final results = <String, ScannedDevice>{};
+    final completer = Completer<List<ScannedDevice>>();
+
+    try {
+      // 检查蓝牙状态
+      final adapterState = await FlutterBluePlus.adapterState.first;
+      if (adapterState != BluetoothAdapterState.on) {
+        throw Exception('蓝牙未开启');
+      }
+
+      _scanSub = FlutterBluePlus.scanResults.listen((resultsList) {
+        for (final r in resultsList) {
+          final id = r.device.remoteId.str;
+          // 优先过滤有FF00服务的设备
+          final hasWaterService = r.advertisementData.serviceUuids.any(
+            (uuid) => uuid.toString().toUpperCase().contains('FF00'),
+          );
+          if (hasWaterService || results.length < 20) {
+            results[id] = ScannedDevice(
+              device: r.device,
+              name: r.device.platformName.isNotEmpty ? r.device.platformName : (r.advertisementData.localName.isNotEmpty ? r.advertisementData.localName : '未知设备'),
+              mac: r.device.remoteId.str,
+              rssi: r.rssi,
+            );
+          }
+        }
+      });
+
+      await FlutterBluePlus.startScan(timeout: timeout, androidUsesFineLocation: true);
+      await FlutterBluePlus.stopScan();
+      await _scanSub?.cancel();
+      _scanSub = null;
+
+      if (!completer.isCompleted) {
+        completer.complete(results.values.toList()..sort((a, b) => b.rssi.compareTo(a.rssi)));
+      }
+    } catch (e) {
+      await _scanSub?.cancel();
+      _scanSub = null;
+      if (!completer.isCompleted) {
+        completer.completeError(e);
+      }
     }
-    return plain.replaceAllMapped(RegExp(r'.{2}'), (m) => '${m.group(0)}:').replaceAll(RegExp(r':$'), '');
+
+    return completer.future;
   }
 
-  /// 连接到设备并等待服务发现+通知开启
-  ///
-  /// [deviceId] 在iOS上是CoreBluetooth的UUID，在Android上是MAC地址
-  Future<BleConnectResult> connect(String deviceId, {Duration timeout = connectTimeout}) async {
+  /// 停止扫描
+  Future<void> stopScan() async {
+    try {
+      await FlutterBluePlus.stopScan();
+    } catch (_) {}
+    await _scanSub?.cancel();
+    _scanSub = null;
+  }
+
+  /// 连接到已扫描到的设备
+  Future<BleConnectResult> connectDevice(BluetoothDevice device, {Duration timeout = connectTimeout}) async {
     await disconnect();
     _ready = false;
     _sawNoService = false;
+    _device = device;
 
     try {
-      // iOS通过扫描获取设备，Android可以直接用MAC
-      // 这里假设调用方已经通过扫描拿到了BluetoothDevice
-      // 如果只有MAC，需要先扫描找到设备
-      _device = BluetoothDevice.fromId(deviceId);
+      await device.connect(timeout: timeout);
+    } catch (e) {
+      return BleFailed('连接失败: $e');
+    }
 
-      await _device!.connect(timeout: timeout).catchError((e) {
-        return BleFailed('连接超时，请靠近设备后重试');
-      });
+    // 发现服务
+    List<BluetoothService> services;
+    try {
+      services = await device.discoverServices();
+    } catch (e) {
+      return BleFailed('服务发现失败: $e');
+    }
 
-      // 发现服务
-      final services = await _device!.discoverServices();
-      final svc = services.where((s) => s.uuid.toString().toUpperCase() == serviceUuid).toList();
-      if (svc.isEmpty) {
-        _sawNoService = true;
-        await disconnect();
-        return const BleNoService();
-      }
+    final svc = services.where((s) => s.uuid.toString().toUpperCase() == serviceUuid).toList();
+    if (svc.isEmpty) {
+      _sawNoService = true;
+      await disconnect();
+      return const BleNoService();
+    }
 
-      final chars = svc.first.characteristics;
-      _notifyChar = chars.where((c) => c.uuid.toString().toUpperCase() == notifyUuid).firstOrNull;
-      _writeChar = chars.where((c) => c.uuid.toString().toUpperCase() == writeUuid).firstOrNull;
+    final chars = svc.first.characteristics;
+    _notifyChar = chars.where((c) => c.uuid.toString().toUpperCase() == notifyUuid).firstOrNull;
+    _writeChar = chars.where((c) => c.uuid.toString().toUpperCase() == writeUuid).firstOrNull;
 
-      if (_notifyChar == null || _writeChar == null) {
-        _sawNoService = true;
-        await disconnect();
-        return const BleNoService();
-      }
+    if (_notifyChar == null || _writeChar == null) {
+      _sawNoService = true;
+      await disconnect();
+      return const BleNoService();
+    }
 
-      // 开启通知
+    // 开启通知
+    try {
       await _notifyChar!.setNotifyValue(true);
       _notifySub = _notifyChar!.lastValueStream.listen(_onCharacteristicChanged);
-
-      _ready = true;
-      return const BleReady();
     } catch (e) {
-      return BleFailed('蓝牙连接异常: $e');
+      return BleFailed('开启通知失败: $e');
     }
+
+    _ready = true;
+    return const BleReady();
   }
 
   /// 断开连接
@@ -137,7 +193,7 @@ class BleController {
     _rxBuf.clear();
   }
 
-  /// 发送命令并等待对应应答
+  /// 发送命令并等待应答
   Future<Uint8List?> _sendAndAwait(
     int cmd, {
     List<int> data = const [],
@@ -146,15 +202,11 @@ class BleController {
   }) async {
     if (!_ready) return null;
     final expected = replyCmd ?? cmd;
-
-    // 先清残留帧（设备可能主动推上一笔未结算的数据）
     await _drainIncoming();
 
-    // 发送
     final wire = BleFrame.cmdToWire(cmd, data);
     if (!await _write(wire)) return null;
 
-    // 等应答
     try {
       final completer = Completer<Uint8List?>();
       late StreamSubscription sub;
@@ -210,7 +262,6 @@ class BleController {
     return p != null && p.isNotEmpty && p[0] == BleFrame.ackOk;
   }
 
-  /// 清空接收缓冲区
   Future<void> _drainIncoming() async {
     _rxBuf.clear();
   }
@@ -219,7 +270,6 @@ class BleController {
   Future<bool> _write(Uint8List wire) async {
     final c = _writeChar;
     if (c == null) return false;
-
     var offset = 0;
     while (offset < wire.length) {
       final len = (offset + chunkSize > wire.length) ? wire.length - offset : chunkSize;
@@ -237,7 +287,6 @@ class BleController {
     return true;
   }
 
-  /// 通知回调：累积字节并按0x0A切帧
   void _onCharacteristicChanged(List<int> bytes) {
     _rxBuf.add(bytes);
     final all = _rxBuf.toBytes();
@@ -255,7 +304,6 @@ class BleController {
     } else {
       _rxBuf.clear();
     }
-
     for (final f in frames) {
       final frame = BleFrame.parseWire(f);
       if (frame == null) continue;
@@ -267,6 +315,7 @@ class BleController {
 
   void dispose() {
     disconnect();
+    stopScan();
     _incoming.close();
   }
 }
