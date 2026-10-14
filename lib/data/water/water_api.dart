@@ -27,8 +27,8 @@ class WaterApi {
   final http.Client _client;
 
   WaterApi({
-    this.gateway = '',
-    this.cid = '',
+    this.gateway = 'https://i.ilife798.com/api/v1',
+    this.cid = 'drinkwaterapp123456789',
     http.Client? client,
   }) : _client = client ?? http.Client();
 
