@@ -117,6 +117,21 @@ class ShowerBleUpload {
   const ShowerBleUpload(this.clData);
 }
 
+/// TCP设备订单状态
+class ShowerOrder {
+  final bool active;
+  final bool owner;
+  final String number;
+  const ShowerOrder({required this.active, required this.owner, required this.number});
+}
+
+/// 账户余额
+class ShowerBalance {
+  final String amount;
+  final String source;
+  const ShowerBalance({required this.amount, required this.source});
+}
+
 /// 会话过期异常
 class ShowerSessionExpired implements Exception {
   final String message;
@@ -257,6 +272,81 @@ class ShowerApi {
     await _call('/account/info', {}, post: false, auth: auth);
   }
 
+  /// 查询余额（先查一卡通，失败再查趣智校园钱包）
+  Future<ShowerBalance> balance(ShowerAuth auth) async {
+    try {
+      final data = await _call('/settlement/campus/userInfo', {}, post: false, auth: auth);
+      final dataObj = data['data'] as Map<String, dynamic>?;
+      final amount = _money(dataObj?['amount'] as String?);
+      if (amount != null) {
+        return ShowerBalance(amount: amount, source: '一卡通余额');
+      }
+    } on ShowerSessionExpired {
+      rethrow;
+    } catch (_) {
+      // 校园卡未签约或暂不可用时查询真实钱包余额
+    }
+    final data = await _call('/account/wallet', {}, post: false, auth: auth);
+    final dataObj = data['data'] as Map<String, dynamic>?;
+    final amount = _money(dataObj?['money'] as String?);
+    if (amount == null) throw Exception('服务未返回余额，请稍后重试');
+    return ShowerBalance(amount: amount, source: '趣智校园钱包余额');
+  }
+
+  /// 查询TCP设备订单状态
+  Future<ShowerOrder> query(ShowerAuth auth, String sn) async {
+    final json = await _call(
+      '/order/tcpDevice/query/rateOrder/using',
+      {'xfModel': '0', 'snCode': sn},
+      post: true,
+      auth: auth,
+      allowUsing: true,
+    );
+    final data = json['data'] as Map<String, dynamic>?;
+    final number = (data?['orderNo'] as String?)?.isNotEmpty == true ? data!['orderNo'] as String : '';
+    final errorCode = (json['errorCode'] as num?)?.toInt() ?? 0;
+    final active = errorCode == 307 || number.isNotEmpty;
+    final owner = data?['isOwner'] as bool? ?? false;
+    return ShowerOrder(active: active, owner: owner, number: number);
+  }
+
+  /// TCP设备开始下单
+  Future<void> start(ShowerAuth auth, String sn) async {
+    await _call(
+      '/order/tcpDevice/downRate/rateOrder',
+      {'xfModel': '0', 'snCode': sn},
+      post: true,
+      auth: auth,
+    );
+  }
+
+  /// 查询TCP设备开水结果，返回订单号（null表示未开水）
+  Future<String?> opened(ShowerAuth auth, String sn) async {
+    final data = await _call(
+      '/order/tcpDevice/query/downRateResult',
+      {'snCode': sn},
+      post: true,
+      auth: auth,
+    );
+    final dataObj = data['data'] as Map<String, dynamic>?;
+    if (dataObj == null) return null;
+    final number = (dataObj['orderNo'] as String?)?.isNotEmpty == true ? dataObj['orderNo'] as String : '';
+    final result = (dataObj['result'] as num?)?.toInt() ?? -1;
+    final state = (dataObj['state'] as num?)?.toInt() ?? -1;
+    if (number.isNotEmpty || result == 0 || state == 0) return number;
+    return null;
+  }
+
+  /// TCP设备关闭订单
+  Future<void> stop(ShowerAuth auth, String sn, String order) async {
+    await _call(
+      '/order/tcpDevice/closeOrder',
+      {'snCode': sn, 'orderNo': order},
+      post: true,
+      auth: auth,
+    );
+  }
+
   /// 通过MAC获取设备信息
   Future<ShowerDevice> device(ShowerAuth auth, String mac) async {
     final data = await _call(
@@ -363,6 +453,17 @@ class ShowerApi {
   }
 
   // ── 工具方法 ──
+
+  /// 金额格式化：保留2位小数
+  static String? _money(String? value) {
+    if (value == null || value.isEmpty || value == 'null') return null;
+    try {
+      final d = double.parse(value);
+      return d.toStringAsFixed(2);
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// 密码哈希：MD5后取后10位大写
   static String _passwordHash(String password) {
