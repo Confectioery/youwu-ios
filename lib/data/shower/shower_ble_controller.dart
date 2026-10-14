@@ -208,14 +208,12 @@ class ShowerBleController {
     final state = await _ble.query();
     if (state == null) return const BlePending('设备未响应，请靠近后重试');
 
-    return switch (state.state) {
-      0 => const BleSettled(),
-      3 || 6 => () {
-          final err = _settle(state, auth);
-          return err == null ? const BleSettled() : BlePending(err);
-        }(),
-      _ => const BleRunning(),
-    };
+    if (state.state == 0) return const BleSettled();
+    if (state.state == 3 || state.state == 6) {
+      final err = await _settle(state, auth);
+      return err == null ? const BleSettled() : BlePending(err);
+    }
+    return const BleRunning();
   }
 
   /// 关水并结算

@@ -1,9 +1,9 @@
 import 'dart:convert';
-import '../model/course_block.dart';
-import '../model/cached_schedule.dart';
-import '../model/course_change.dart';
-import '../model/term_spec.dart';
-import '../term_calculator.dart';
+import 'model/course_block.dart';
+import 'model/cached_schedule.dart';
+import 'model/course_change.dart';
+import 'model/term_spec.dart';
+import 'term_calculator.dart';
 import 'local/schedule_cache.dart';
 import 'local/settings_store.dart';
 import 'local/crypto.dart';
@@ -225,7 +225,7 @@ class ScheduleRepository {
     }
 
     const order = {ChangeType.changed: 0, ChangeType.added: 1, ChangeType.removed: 2};
-    out.sort((a, b) {
+    out.sort((CourseChange a, CourseChange b) {
       final oa = order[a.type] ?? 3;
       final ob = order[b.type] ?? 3;
       if (oa != ob) return oa.compareTo(ob);

@@ -1,5 +1,6 @@
-import '../model/term_spec.dart';
-import '../model/cached_schedule.dart';
+import 'model/term_spec.dart';
+import 'model/cached_schedule.dart';
+import 'model/course_block.dart';
 
 /// 学期与周次计算
 class TermCalculator {
