@@ -1,0 +1,44 @@
+workflows:
+  ios-build:
+    name: iOS Release Build
+    max_build_duration: 30
+    instance_type: mac_mini_m1
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      vars:
+        BUNDLE_ID: "com.fengkao.timetable"
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+    scripts:
+      - name: 补全iOS工程文件
+        script: |
+          cd $CM_BUILD_DIR
+          flutter create --platforms=ios --org com.fengkao --project-name youwu .
+      - name: 获取依赖
+        script: |
+          cd $CM_BUILD_DIR
+          flutter pub get
+      - name: 构建iOS（无签名）
+        script: |
+          cd $CM_BUILD_DIR
+          flutter build ios --release --no-codesign --verbose
+      - name: 打包ipa
+        script: |
+          cd $CM_BUILD_DIR/build/ios/iphoneos
+          mkdir -p Payload
+          cp -R Runner.app Payload/
+          zip -r youwu-ios.ipa Payload
+          cp youwu-ios.ipa $CM_BUILD_DIR/youwu-ios.ipa
+    artifacts:
+      - build/ios/iphoneos/youwu-ios.ipa
+      - youwu-ios.ipa
+    publishing:
+      email:
+        recipients:
+          - your-email@example.com

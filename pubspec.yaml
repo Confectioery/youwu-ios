@@ -1,0 +1,45 @@
+name: youwu
+description: 有梧 - 梧州学院校园生活App（iOS版）
+publish_to: 'none'
+version: 1.1.0+9
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  # 状态管理
+  provider: ^6.1.2
+  # 网络
+  http: ^1.2.2
+  # 蓝牙
+  flutter_blue_plus: ^1.32.15
+  # 本地存储
+  shared_preferences: ^2.3.2
+  # JSON序列化
+  json_annotation: ^4.9.0
+  # 加密
+  encrypt: ^5.0.3
+  pointycastle: ^3.9.1
+  # 扫码
+  mobile_scanner: ^5.2.3
+  # 权限
+  permission_handler: ^11.3.1
+  # 工具
+  intl: ^0.19.0
+  crypto: ^3.0.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  json_serializable: ^6.8.0
+  build_runner: ^2.4.12
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/
