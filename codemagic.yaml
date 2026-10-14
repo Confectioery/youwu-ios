@@ -24,13 +24,28 @@ workflows:
         script: |
           cd $CM_BUILD_DIR
           flutter pub get
-      - name: 构建iOS（无签名）
+      - name: 生成iOS构建配置
         script: |
           cd $CM_BUILD_DIR
-          flutter build ios --release --no-codesign --verbose
+          flutter build ios --config-only --release --no-codesign
+      - name: 用Xcode构建（强制无签名）
+        script: |
+          cd $CM_BUILD_DIR/ios
+          xcodebuild -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            build
       - name: 打包ipa
         script: |
           cd $CM_BUILD_DIR/build/ios/iphoneos
+          ls -la
           mkdir -p Payload
           cp -R Runner.app Payload/
           zip -r youwu-ios.ipa Payload
@@ -38,7 +53,3 @@ workflows:
     artifacts:
       - build/ios/iphoneos/youwu-ios.ipa
       - youwu-ios.ipa
-    publishing:
-      email:
-        recipients:
-          - your-email@example.com
