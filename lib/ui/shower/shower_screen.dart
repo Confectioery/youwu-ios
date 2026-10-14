@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import '../../data/shower/ble/ble_controller.dart';
 import '../../data/shower/shower_ble_controller.dart';
 import '../../data/shower/shower_api.dart';
 import '../../data/local/settings_store.dart';

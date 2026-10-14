@@ -4,23 +4,6 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'ble_frame.dart';
 import 'device_query_state.dart';
 
-/// 设备状态帧解析结果
-class DeviceQueryState {
-  final String protocolType;
-  final String randomNumber;
-  final int state; // 0=空闲, 1=使用中, 3/6=待结算
-  final int devType;
-  final int a1;
-
-  const DeviceQueryState({
-    required this.protocolType,
-    required this.randomNumber,
-    required this.state,
-    required this.devType,
-    required this.a1,
-  });
-}
-
 /// 连接结果
 sealed class BleConnectResult {
   const BleConnectResult();
@@ -61,7 +44,7 @@ class BleController {
   BluetoothCharacteristic? _writeChar;
   BluetoothCharacteristic? _notifyChar;
   StreamSubscription<List<int>>? _notifySub;
-  StreamSubscription<ScanResult>? _scanSub;
+  StreamSubscription<List<ScanResult>>? _scanSub;
 
   final StreamController<(int, Uint8List)> _incoming = StreamController.broadcast();
   final BytesBuilder _rxBuf = BytesBuilder();
