@@ -439,13 +439,27 @@ class _ShowerScreenState extends State<ShowerScreen> {
             '使用手机号和验证码/密码登录',
             style: TextStyle(color: Colors.grey),
           ),
+          if (_error != null) ...[
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Text(
+                _error!,
+                style: const TextStyle(color: Colors.red),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
           const SizedBox(height: 32),
           SizedBox(
             width: 200,
             height: 48,
             child: FilledButton(
-              onPressed: _showLoginDialog,
-              child: const Text('立即登录'),
+              onPressed: () {
+                setState(() => _error = null);
+                _showLoginDialog();
+              },
+              child: Text(_loading ? '登录中...' : '立即登录'),
             ),
           ),
         ],
