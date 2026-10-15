@@ -173,6 +173,59 @@ class _ShowerScreenState extends State<ShowerScreen> {
 
   // ── 设备扫描与绑定 ──
 
+  /// 主控制页面快速扫描选择设备（不需要重新绑定）
+  Future<void> _scanAndSelectDevice() async {
+    setState(() {
+      _scanning = true;
+      _error = null;
+    });
+    try {
+      final devices = await _bleController.scanDevices();
+      if (!mounted) return;
+      if (devices.isEmpty) {
+        setState(() => _error = '未扫描到蓝牙设备，请靠近热水器并确保蓝牙已开启');
+        return;
+      }
+      // 弹出选择对话框
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('选择热水器'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: devices.length,
+              itemBuilder: (context, index) {
+                final d = devices[index];
+                return ListTile(
+                  leading: const Icon(Icons.bluetooth, color: Colors.blue),
+                  title: Text(d.name),
+                  subtitle: Text('${d.mac ?? '未知'} · ${d.rssi} dBm'),
+                  onTap: () {
+                    _bleController.selectedDevice = d.device;
+                    Navigator.pop(context);
+                    setState(() => _error = null);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('已选择: ${d.name}')),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          ],
+        ),
+      );
+    } catch (e) {
+      setState(() => _error = '扫描失败: $e');
+    } finally {
+      setState(() => _scanning = false);
+    }
+  }
+
   Future<void> _scanDevices() async {
     setState(() {
       _scanning = true;
@@ -283,7 +336,8 @@ class _ShowerScreenState extends State<ShowerScreen> {
       return;
     }
     if (_bleController.selectedDevice == null) {
-      setState(() => _error = '请先扫描并选择热水器');
+      // 重新打开App后蓝牙设备对象丢失，需要重新扫描
+      setState(() => _error = '请先扫描并选择热水器（点击下方扫描按钮）');
       return;
     }
 
@@ -575,6 +629,32 @@ class _ShowerScreenState extends State<ShowerScreen> {
             ),
           ),
         ),
+        // 如果蓝牙设备未选择，显示扫描按钮
+        if (_bleController.selectedDevice == null) ...[
+          const SizedBox(height: 12),
+          Card(
+            color: Colors.orange.shade50,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  const Icon(Icons.bluetooth_disabled, color: Colors.orange),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      '蓝牙设备未连接，请先扫描选择热水器',
+                      style: TextStyle(fontSize: 13, color: Colors.orange),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _scanAndSelectDevice,
+                    child: const Text('扫描'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 16),
         // 控制面板
         Expanded(

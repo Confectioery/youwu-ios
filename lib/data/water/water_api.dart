@@ -111,32 +111,31 @@ class WaterApi {
     if (!configured) {
       throw Exception('喝水服务暂未配置，请联系应用维护者');
     }
+    final url = '${gateway.replaceAll(RegExp(r"/$"), "")}$path';
     final resp = await _client.post(
-      Uri.parse('${gateway.replaceAll(RegExp(r"/$"), "")}$path'),
+      Uri.parse(url),
       headers: _headers(token: token, app: app),
       body: body != null ? jsonEncode(body) : null,
     );
 
     if (resp.statusCode == 401) throw const WaterSessionExpired();
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
-      throw Exception('服务暂时不可用（${resp.statusCode}）');
+      throw Exception('HTTP ${resp.statusCode} $path: ${resp.body.substring(0, resp.body.length > 200 ? 200 : resp.body.length)}');
     }
 
-    final result = jsonDecode(resp.body) as Map<String, dynamic>;
+    Map<String, dynamic> result;
+    try {
+      result = jsonDecode(resp.body) as Map<String, dynamic>;
+    } catch (e) {
+      throw Exception('JSON解析失败 $path: ${resp.body.substring(0, resp.body.length > 200 ? 200 : resp.body.length)}');
+    }
     final code = result['code'] as int?;
     if (code == -99) throw const WaterSessionExpired();
     if (code == -21) throw const WaterSessionExpired('设备登录未被接受，请重新登录');
     if (code != null && code != 0) {
       final msg = result['msg']?.toString();
-      throw Exception(switch (code) {
-        -88 => '请先在慧生活798完成代扣签约',
-        -87 => '代扣签约已过期，请在慧生活798重新签约',
-        -52 => '账户欠费，请充值后使用',
-        -20 => '请先在慧生活798绑定一卡通账户',
-        -19 => '设备准备中，请稍后再试',
-        -82 => '请先在慧生活798完成支付',
-        _ => (msg == null || msg.isEmpty) ? '请求失败（$code）' : msg,
-      });
+      final detail = (msg == null || msg.isEmpty) ? '请求失败（code=$code）' : '$msg (code=$code)';
+      throw Exception('$detail | $path | resp=${resp.body.substring(0, resp.body.length > 300 ? 300 : resp.body.length)}');
     }
     return result;
   }
