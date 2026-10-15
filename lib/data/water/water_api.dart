@@ -127,6 +127,7 @@ class WaterApi {
     if (code == -99) throw const WaterSessionExpired();
     if (code == -21) throw const WaterSessionExpired('设备登录未被接受，请重新登录');
     if (code != null && code != 0) {
+      final msg = result['msg']?.toString();
       throw Exception(switch (code) {
         -88 => '请先在慧生活798完成代扣签约',
         -87 => '代扣签约已过期，请在慧生活798重新签约',
@@ -134,7 +135,7 @@ class WaterApi {
         -20 => '请先在慧生活798绑定一卡通账户',
         -19 => '设备准备中，请稍后再试',
         -82 => '请先在慧生活798完成支付',
-        _ => (result['msg'] as String?)?.let((m) => m.isEmpty ? '请求失败（$code）' : m) ?? '请求失败（$code）',
+        _ => (msg == null || msg.isEmpty) ? '请求失败（$code）' : msg,
       });
     }
     return result;
@@ -144,7 +145,7 @@ class WaterApi {
     return {
       'ApplicationType': app ? '1,1' : '1,5',
       'VersionCode': '2.0.83',
-      'User-Agent': 'Youwu/1.1 (iOS)',
+      'User-Agent': 'Timetable/1.1 (Android)',
       'Content-Type': 'application/json',
       'Accept-Language': 'zh-Hans-CN;q=1',
       if (token.isNotEmpty) 'Authorization': token,
@@ -152,8 +153,4 @@ class WaterApi {
   }
 
   void close() => _client.close();
-}
-
-extension _Let<T> on T {
-  R let<R>(R Function(T) f) => f(this);
 }
