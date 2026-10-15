@@ -62,7 +62,7 @@ class WaterApi {
       '/acc/login',
       body: {'openCode': '', 'authCode': code, 'un': phone, 'cid': cid},
     );
-    final token = result['data']?['al']?['token'] as String?;
+    final token = result['data']?['al']?['token']?.toString();
     if (token == null || token.isEmpty || token == 'null') {
       throw Exception('登录未返回有效凭据，请重试');
     }
@@ -77,11 +77,12 @@ class WaterApi {
     return items
         .map((e) {
           final m = e as Map<String, dynamic>;
-          final id = m['id'] as String?;
+          final id = m['id']?.toString();
           if (id == null || id.isEmpty || id == 'null') return null;
+          final name = m['name']?.toString();
           return WaterDevice(
             id: id,
-            name: (m['name'] as String?)?.let((n) => n.isEmpty || n == 'null' ? '饮水设备' : n) ?? '饮水设备',
+            name: (name == null || name.isEmpty || name == 'null') ? '饮水设备' : name,
           );
         })
         .whereType<WaterDevice>()
