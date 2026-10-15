@@ -5,6 +5,9 @@ import 'ble/ble_sign_builder.dart';
 import 'ble/ble_frame.dart';
 import 'ble/device_query_state.dart';
 
+/// 安全转换为String（服务端可能返回int或String）
+String asString(dynamic v) => v?.toString() ?? '';
+
 /// 洗澡账户认证信息
 class ShowerAuth {
   final String loginCode;
@@ -88,17 +91,17 @@ class ShowerDevice {
       };
 
   factory ShowerDevice.fromJson(Map<String, dynamic> json) {
-    final sn = _asString(json['snCode']);
+    final sn = asString(json['snCode']);
     if (sn.isEmpty) throw Exception('设备信息不完整，请重新扫码');
     return ShowerDevice(
       sn: sn,
-      name: _asString(json['deviceName']).isNotEmpty ? _asString(json['deviceName']) : '浴室热水器',
-      mac: _asString(json['macAddress']),
+      name: asString(json['deviceName']).isNotEmpty ? asString(json['deviceName']) : '浴室热水器',
+      mac: asString(json['macAddress']),
       bluetoothOnly: json['isBle'] as bool? ?? false,
       deviceId: (json['deviceId'] as num?)?.toInt() ?? 0,
       bigTypeId: (json['bigTypeId'] as num?)?.toInt() ?? 0,
       smallTypeId: (json['smallTypeId'] as num?)?.toInt() ?? 0,
-      realMac: _asString(json['realMac']),
+      realMac: asString(json['realMac']),
     );
   }
 }
@@ -249,10 +252,10 @@ class ShowerApi {
 
     final account = dataObj['userAccount'] as Map<String, dynamic>?;
     final auth = ShowerAuth(
-      loginCode: _asString(dataObj['loginCode']),
-      userId: _asString(dataObj['userId']),
-      accountId: _asString(account?['accountId']),
-      projectId: _asString(account?['projectId']),
+      loginCode: asString(dataObj['loginCode']),
+      userId: asString(dataObj['userId']),
+      accountId: asString(account?['accountId']),
+      projectId: asString(account?['projectId']),
       phone: phone,
     );
 
@@ -277,7 +280,7 @@ class ShowerApi {
     try {
       final data = await _call('/settlement/campus/userInfo', {}, post: false, auth: auth);
       final dataObj = data['data'] as Map<String, dynamic>?;
-      final amount = _money(_asString(dataObj?['amount']));
+      final amount = _money(asString(dataObj?['amount']));
       if (amount != null) {
         return ShowerBalance(amount: amount, source: '一卡通余额');
       }
@@ -288,7 +291,7 @@ class ShowerApi {
     }
     final data = await _call('/account/wallet', {}, post: false, auth: auth);
     final dataObj = data['data'] as Map<String, dynamic>?;
-    final amount = _money(_asString(dataObj?['money']));
+    final amount = _money(asString(dataObj?['money']));
     if (amount == null) throw Exception('服务未返回余额，请稍后重试');
     return ShowerBalance(amount: amount, source: '趣智校园钱包余额');
   }
@@ -303,7 +306,7 @@ class ShowerApi {
       allowUsing: true,
     );
     final data = json['data'] as Map<String, dynamic>?;
-    final number = _asString(data?['orderNo']);
+    final number = asString(data?['orderNo']);
     final errorCode = (json['errorCode'] as num?)?.toInt() ?? 0;
     final active = errorCode == 307 || number.isNotEmpty;
     final owner = data?['isOwner'] as bool? ?? false;
@@ -330,7 +333,7 @@ class ShowerApi {
     );
     final dataObj = data['data'] as Map<String, dynamic>?;
     if (dataObj == null) return null;
-    final number = _asString(dataObj['orderNo']);
+    final number = asString(dataObj['orderNo']);
     final result = (dataObj['result'] as num?)?.toInt() ?? -1;
     final state = (dataObj['state'] as num?)?.toInt() ?? -1;
     if (number.isNotEmpty || result == 0 || state == 0) return number;
@@ -396,15 +399,15 @@ class ShowerApi {
     final result = data['data'] as Map<String, dynamic>?;
     if (result == null) throw Exception('服务未返回蓝牙费率');
 
-    final downDataHex = _asString(result['downData']);
+    final downDataHex = asString(result['downData']);
     final raw = BleFrame.fromHex(downDataHex);
     if (raw == null || raw.isEmpty) throw Exception('服务返回的蓝牙费率无效');
 
-    final orderNo = _asString(result['orderNo']);
+    final orderNo = asString(result['orderNo']);
     return ShowerBleRate(
       data: raw,
-      consumeDate: _asString(result['consumeDate']),
-      orderNo: orderNo.isNotEmpty ? orderNo : _asString(result['liquidOrderNo']),
+      consumeDate: asString(result['consumeDate']),
+      orderNo: orderNo.isNotEmpty ? orderNo : asString(result['liquidOrderNo']),
     );
   }
 
@@ -452,9 +455,6 @@ class ShowerApi {
   }
 
   // ── 工具方法 ──
-
-  /// 安全转换为String（服务端可能返回int或String）
-  static String _asString(dynamic v) => v?.toString() ?? '';
 
   /// 金额格式化：保留2位小数
   static String? _money(String? value) {
