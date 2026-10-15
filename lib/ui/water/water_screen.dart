@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../../data/water/water_api.dart';
 import '../../data/water/water_store.dart';
@@ -26,7 +27,7 @@ class _WaterScreenState extends State<WaterScreen> {
 
   // 登录相关
   String? _captchaKey;
-  List<int>? _captchaImage;
+  Uint8List? _captchaImage;
 
   @override
   void initState() {
